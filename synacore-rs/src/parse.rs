@@ -117,14 +117,11 @@ pub enum Token {
 }
 
 impl Token {
-    
     /// Parse the next token out of a slice of u16's
     pub fn parse(input: &[u16]) -> Option<Self> {
         if let Some(val) = input.get(0) {
             match *val {
-                HALT => {
-                    Some(Self::Halt)
-                }
+                HALT => Some(Self::Halt),
 
                 SET => {
                     let register = input.get(1)?;
@@ -249,9 +246,7 @@ impl Token {
                     Some(Self::Call(*destination))
                 }
 
-                RET => {
-                    Some(Self::Ret())
-                }
+                RET => Some(Self::Ret()),
 
                 OUT => {
                     let value = input.get(1)?;
@@ -265,9 +260,7 @@ impl Token {
                     Some(Self::In(*destination))
                 }
 
-                NOOP => {
-                    Some(Self::Noop)
-                }
+                NOOP => Some(Self::Noop),
 
                 _ => {
                     error!("Unknown opcode {val}");
@@ -276,7 +269,6 @@ impl Token {
                 }
             }
         } else {
-
             None
         }
     }
@@ -317,7 +309,6 @@ pub fn decompile(program: &[u16]) -> String {
     let mut pc = 0;
     while pc < program.len() {
         if let Some(token) = Token::parse(&program[pc..]) {
-
             output += &format!("{token:?}\n");
 
             pc += token.pc_delta();

@@ -1,6 +1,6 @@
-use std::ops::{Add, Mul};
 use anyhow::{anyhow, Context};
-use log::{error, info, trace, debug};
+use log::{debug, error, info, trace};
+use std::ops::{Add, Mul};
 
 use crate::parse::Token;
 
@@ -63,7 +63,10 @@ impl Machine {
                     return;
                 };
             } else {
-                error!("could not process instruction at {}: {}", self.pc, self.memory[self.pc]);
+                error!(
+                    "could not process instruction at {}: {}",
+                    self.pc, self.memory[self.pc]
+                );
                 self.pc += 1;
             }
         }
@@ -79,7 +82,7 @@ impl Machine {
                 // dbg!(&token);
                 if register >= REGISTER_OFFSET && register < REGISTER_OFFSET + NUM_REGISTERS {
                     self.memory[register as usize] = self.fetch_val(value);
-                
+
                     self.pc += token.pc_delta();
                 } else {
                     self.run = false;
@@ -123,8 +126,7 @@ impl Machine {
                     debug!("    lhs == rhs, set {destination} to 1");
 
                     self.memory[destination as usize] = 1
-                }
-                else {
+                } else {
                     debug!("    lhs != rhs, set {destination} to 0");
                     self.memory[destination as usize] = 0
                 }
@@ -155,14 +157,14 @@ impl Machine {
                 // dbg!(&token);
                 // dbg!(&self.pc);
                 // dbg!(self.fetch_val(test_val));
-                
+
                 if self.fetch_val(test_val) != 0 {
                     debug!("    test value is non-zero, set pc to {destination}");
-                    
+
                     self.pc = self.fetch_val(destination) as usize;
                 } else {
                     debug!("    test value is zero, continue");
-                
+
                     self.pc += token.pc_delta();
                 }
             }
@@ -172,10 +174,10 @@ impl Machine {
                 debug!("    pc: {}", self.pc);
                 debug!("    test value is {}", self.fetch_val(test_val));
                 // dbg!(&token);
-                
+
                 if self.fetch_val(test_val) == 0 {
                     debug!("    test value is zero, set pc to {destination}");
-                    
+
                     self.pc = self.fetch_val(destination) as usize;
                 } else {
                     debug!("    test value is non-zero, continue");
@@ -186,7 +188,8 @@ impl Machine {
 
             Token::Add(destination, lhs, rhs) => {
                 // dbg!(&token);
-                let result = Self::aritmatic_mod_u15(self.fetch_val(lhs), self.fetch_val(rhs), u32::add);
+                let result =
+                    Self::aritmatic_mod_u15(self.fetch_val(lhs), self.fetch_val(rhs), u32::add);
                 self.memory[destination as usize] = result;
 
                 self.pc += token.pc_delta();
@@ -194,8 +197,8 @@ impl Machine {
 
             Token::Mult(destination, lhs, rhs) => {
                 // dbg!(&token);
-                let result = Self::aritmatic_mod_u15(self.fetch_val(lhs), self.fetch_val(rhs), u32::mul);
-;
+                let result =
+                    Self::aritmatic_mod_u15(self.fetch_val(lhs), self.fetch_val(rhs), u32::mul);
                 self.memory[destination as usize] = result;
 
                 self.pc += token.pc_delta();
@@ -337,7 +340,7 @@ impl Machine {
         &self.memory[REGISTER_OFFSET as usize..(REGISTER_OFFSET + NUM_REGISTERS) as usize]
     }
 
-    /// If arg is a register address return the contents of that register, 
+    /// If arg is a register address return the contents of that register,
     /// otherwise return arg
     fn fetch_val(&self, arg: u16) -> u16 {
         if arg < REGISTER_OFFSET {
@@ -349,11 +352,6 @@ impl Machine {
 
     fn aritmatic_mod_u15(lhs: u16, rhs: u16, f: fn(u32, u32) -> u32) -> u16 {
         (f(lhs as u32, rhs as u32) % U15_MAX as u32) as u16
-    }
-
-    #[allow(dead_code)]
-    pub fn registers(&self) -> &[u16] {
-        &self.memory[REGISTER_OFFSET as usize..(REGISTER_OFFSET + NUM_REGISTERS) as usize]
     }
 }
 
