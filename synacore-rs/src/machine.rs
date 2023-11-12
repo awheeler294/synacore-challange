@@ -1,5 +1,6 @@
+use std::ops::{Add, Mul};
 use anyhow::{anyhow, Context};
-use log::{error, info, trace};
+use log::{error, info, trace, debug};
 
 use crate::parse::Token;
 
@@ -98,6 +99,7 @@ impl Machine {
             Token::Pop(destination) => {
                 // dbg!(&token);
                 if let Some(value) = self.stack.pop() {
+                    // dbg!(value);
                     self.memory[destination as usize] = value;
 
                     self.pc += token.pc_delta();
@@ -108,13 +110,23 @@ impl Machine {
             }
 
             Token::Eq(destination, lhs, rhs) => {
+                debug!("Eq: {destination}, {lhs}, {rhs}");
+                debug!("    pc: {}", self.pc);
+                debug!("    lhs is {}", self.fetch_val(lhs));
+                debug!("    rhs is {}", self.fetch_val(rhs));
                 // dbg!(&token);
-                dbg!(&self.pc);
-                dbg!(&self.fetch_val(destination));
-                dbg!(&self.fetch_val(lhs));
-                dbg!(&self.fetch_val(rhs));
+                // dbg!(&self.pc);
+                // dbg!(&self.fetch_val(destination));
+                // dbg!(&self.fetch_val(lhs));
+                // dbg!(&self.fetch_val(rhs));
                 if self.fetch_val(lhs) == self.fetch_val(rhs) {
+                    debug!("    lhs == rhs, set {destination} to 1");
+
                     self.memory[destination as usize] = 1
+                }
+                else {
+                    debug!("    lhs != rhs, set {destination} to 0");
+                    self.memory[destination as usize] = 0
                 }
 
                 self.pc += token.pc_delta();
@@ -132,33 +144,49 @@ impl Machine {
             }
 
             Token::Jmp(destination) => {
-                dbg!(&token);
+                // dbg!(&token);
                 self.pc = self.fetch_val(destination) as usize;
             }
 
             Token::Jt(test_val, destination) => {
-                dbg!(&token);
-                dbg!(&self.pc);
-                dbg!(self.fetch_val(test_val));
+                debug!("Jt: {test_val}, {destination}");
+                debug!("    pc: {}", self.pc);
+                debug!("    test value is {}", self.fetch_val(test_val));
+                // dbg!(&token);
+                // dbg!(&self.pc);
+                // dbg!(self.fetch_val(test_val));
+                
                 if self.fetch_val(test_val) != 0 {
+                    debug!("    test value is non-zero, set pc to {destination}");
+                    
                     self.pc = self.fetch_val(destination) as usize;
                 } else {
+                    debug!("    test value is zero, continue");
+                
                     self.pc += token.pc_delta();
                 }
             }
 
             Token::Jf(test_val, destination) => {
-                dbg!(&token);
+                debug!("Jf: {test_val}, {destination}");
+                debug!("    pc: {}", self.pc);
+                debug!("    test value is {}", self.fetch_val(test_val));
+                // dbg!(&token);
+                
                 if self.fetch_val(test_val) == 0 {
+                    debug!("    test value is zero, set pc to {destination}");
+                    
                     self.pc = self.fetch_val(destination) as usize;
                 } else {
+                    debug!("    test value is non-zero, continue");
+
                     self.pc += token.pc_delta();
                 }
             }
 
             Token::Add(destination, lhs, rhs) => {
                 // dbg!(&token);
-                let result = self.fetch_val(lhs) + self.fetch_val(rhs);
+                let result = Self::aritmatic_mod_u15(self.fetch_val(lhs), self.fetch_val(rhs), u32::add);
                 self.memory[destination as usize] = result;
 
                 self.pc += token.pc_delta();
@@ -166,7 +194,8 @@ impl Machine {
 
             Token::Mult(destination, lhs, rhs) => {
                 // dbg!(&token);
-                let result = self.fetch_val(lhs) * self.fetch_val(rhs);
+                let result = Self::aritmatic_mod_u15(self.fetch_val(lhs), self.fetch_val(rhs), u32::mul);
+;
                 self.memory[destination as usize] = result;
 
                 self.pc += token.pc_delta();
@@ -182,7 +211,7 @@ impl Machine {
 
             Token::And(destination, lhs, rhs) => {
                 // dbg!(&token);
-                let result = self.fetch_val(lhs) & self.fetch_val(rhs);
+                let result = (self.fetch_val(lhs) & self.fetch_val(rhs)) % U15_MAX;
                 self.memory[destination as usize] = result;
 
                 self.pc += token.pc_delta();
@@ -190,41 +219,65 @@ impl Machine {
 
             Token::Or(destination, lhs, rhs) => {
                 // dbg!(&token);
-                let result = self.fetch_val(lhs) | self.fetch_val(rhs);
+                let result = (self.fetch_val(lhs) | self.fetch_val(rhs)) % U15_MAX;
                 self.memory[destination as usize] = result;
 
                 self.pc += token.pc_delta();
             }
 
             Token::Not(destination, value) => {
+                debug!("Not: {destination}, {value}");
+                debug!("    pc: {}", self.pc);
+                debug!("    value is {}", self.fetch_val(value));
                 // dbg!(&token);
-                let result = !self.fetch_val(value);
+
+                let result = (!self.fetch_val(value)) % U15_MAX;
+                debug!("    result is {result}");
+
+                debug!("    set {destination} to {result}");
                 self.memory[destination as usize] = result;
 
                 self.pc += token.pc_delta();
             }
 
             Token::Rmem(destination, source) => {
+                debug!("Rmem: {destination}, {source}");
+                debug!("    pc: {}", self.pc);
                 // dbg!(&token);
+
+                let source = self.fetch_val(source);
+
                 let value = self.memory[source as usize];
+                debug!("    value: {value}");
+
+                debug!("    writing {value} to memory address {destination}");
                 self.memory[destination as usize] = value;
 
                 self.pc += token.pc_delta();
             }
 
             Token::Wmem(destination, value) => {
+                debug!("Wmem: {destination}, {value}");
+                debug!("    pc: {}", self.pc);
                 // dbg!(&token);
+
+                let destination = self.fetch_val(destination);
+                debug!("    writing {value} to memory address {destination}");
                 self.memory[destination as usize] = self.fetch_val(value);
 
                 self.pc += token.pc_delta();
             }
 
             Token::Call(destination) => {
-                dbg!(&token);
-                dbg!(self.pc + 2);
-                dbg!(self.fetch_val(destination));
+                debug!("Call: {destination}");
+                debug!("    pc: {}", self.pc);
+                debug!("    push {} on to the stack", self.pc + token.pc_delta());
+                debug!("    set pc to {destination}");
+                // dbg!(&token);
+                // dbg!(self.pc + 2);
+                // dbg!(self.fetch_val(destination));
 
-                self.stack.push(self.pc as u16 + 2);
+                self.stack.push(self.pc as u16 + token.pc_delta() as u16);
 
                 self.pc = self.fetch_val(destination) as usize;
             }
@@ -275,6 +328,17 @@ impl Machine {
         Ok(())
     }
 
+    pub fn flush_output_buffer(&mut self) {
+        self.output_buffer.flush();
+    }
+
+    #[allow(dead_code)]
+    pub fn registers(&self) -> &[u16] {
+        &self.memory[REGISTER_OFFSET as usize..(REGISTER_OFFSET + NUM_REGISTERS) as usize]
+    }
+
+    /// If arg is a register address return the contents of that register, 
+    /// otherwise return arg
     fn fetch_val(&self, arg: u16) -> u16 {
         if arg < REGISTER_OFFSET {
             arg
@@ -283,8 +347,8 @@ impl Machine {
         }
     }
 
-    pub fn flush_output_buffer(&mut self) {
-        self.output_buffer.flush();
+    fn aritmatic_mod_u15(lhs: u16, rhs: u16, f: fn(u32, u32) -> u32) -> u16 {
+        (f(lhs as u32, rhs as u32) % U15_MAX as u32) as u16
     }
 
     #[allow(dead_code)]

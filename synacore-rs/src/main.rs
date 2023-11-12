@@ -47,12 +47,13 @@ struct Args {
     #[arg(short, long, default_value = "challenge.bin")]
     program: String,
 
-    /// instead of running program print a decompiled version
+    /// Instead of running program print a decompiled version
     #[arg(short, long, default_value_t = false)]
     decompile: bool,
 }
 
 fn main() {
+    // simple_logger::init_with_level(log::Level::Debug).unwrap();
     simple_logger::init_with_level(log::Level::Info).unwrap();
 
     let args = Args::parse();
