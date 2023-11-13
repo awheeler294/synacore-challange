@@ -1,5 +1,3 @@
-use log::error;
-
 pub const HALT: u16 = 0;
 pub const SET: u16 = 1;
 pub const PUSH: u16 = 2;
@@ -119,158 +117,151 @@ pub enum Token {
 impl Token {
     /// Parse the next token out of a slice of u16's
     pub fn parse(input: &[u16]) -> Option<Self> {
-        if let Some(val) = input.get(0) {
-            match *val {
-                HALT => Some(Self::Halt),
+        let val = input.get(0)?;
+        Some(match *val {
+            HALT => Self::Halt,
 
-                SET => {
-                    let register = input.get(1)?;
-                    let value = input.get(2)?;
+            SET => {
+                let register = input.get(1)?;
+                let value = input.get(2)?;
 
-                    Some(Self::Set(*register, *value))
-                }
-
-                PUSH => {
-                    let value = input.get(1)?;
-
-                    Some(Self::Push(*value))
-                }
-
-                POP => {
-                    let destination = input.get(1)?;
-
-                    Some(Self::Pop(*destination))
-                }
-
-                EQ => {
-                    let destination = input.get(1)?;
-                    let lhs = input.get(2)?;
-                    let rhs = input.get(3)?;
-
-                    Some(Self::Eq(*destination, *lhs, *rhs))
-                }
-
-                GT => {
-                    let destination = input.get(1)?;
-                    let lhs = input.get(2)?;
-                    let rhs = input.get(3)?;
-
-                    Some(Self::Gt(*destination, *lhs, *rhs))
-                }
-
-                JMP => {
-                    let destination = input.get(1)?;
-
-                    Some(Self::Jmp(*destination))
-                }
-
-                JT => {
-                    let test_val = input.get(1)?;
-
-                    let destination = input.get(2)?;
-
-                    Some(Self::Jt(*test_val, *destination))
-                }
-
-                JF => {
-                    let test_val = input.get(1)?;
-                    let destination = input.get(2)?;
-
-                    Some(Self::Jf(*test_val, *destination))
-                }
-
-                ADD => {
-                    let destination = input.get(1)?;
-                    let lhs = input.get(2)?;
-                    let rhs = input.get(3)?;
-
-                    Some(Self::Add(*destination, *lhs, *rhs))
-                }
-
-                MULT => {
-                    let destination = input.get(1)?;
-                    let lhs = input.get(2)?;
-                    let rhs = input.get(3)?;
-
-                    Some(Self::Mult(*destination, *lhs, *rhs))
-                }
-
-                MOD => {
-                    let destination = input.get(1)?;
-                    let lhs = input.get(2)?;
-                    let rhs = input.get(3)?;
-
-                    Some(Self::Mod(*destination, *lhs, *rhs))
-                }
-
-                AND => {
-                    let destination = input.get(1)?;
-                    let lhs = input.get(2)?;
-                    let rhs = input.get(3)?;
-
-                    Some(Self::And(*destination, *lhs, *rhs))
-                }
-
-                OR => {
-                    let destination = input.get(1)?;
-                    let lhs = input.get(2)?;
-                    let rhs = input.get(3)?;
-
-                    Some(Self::Or(*destination, *lhs, *rhs))
-                }
-
-                NOT => {
-                    let destination = input.get(1)?;
-                    let value = input.get(2)?;
-
-                    Some(Self::Not(*destination, *value))
-                }
-
-                RMEM => {
-                    let destination = input.get(1)?;
-                    let source = input.get(2)?;
-
-                    Some(Self::Rmem(*destination, *source))
-                }
-
-                WMEM => {
-                    let destination = input.get(1)?;
-                    let value = input.get(2)?;
-
-                    Some(Self::Wmem(*destination, *value))
-                }
-
-                CALL => {
-                    let destination = input.get(1)?;
-
-                    Some(Self::Call(*destination))
-                }
-
-                RET => Some(Self::Ret()),
-
-                OUT => {
-                    let value = input.get(1)?;
-
-                    Some(Self::Out(*value))
-                }
-
-                IN => {
-                    let destination = input.get(1)?;
-
-                    Some(Self::In(*destination))
-                }
-
-                NOOP => Some(Self::Noop),
-
-                _ => {
-                    error!("Unknown opcode {val}");
-
-                    Some(Self::Unknown(*val))
-                }
+                Self::Set(*register, *value)
             }
-        } else {
-            None
-        }
+
+            PUSH => {
+                let value = input.get(1)?;
+
+                Self::Push(*value)
+            }
+
+            POP => {
+                let destination = input.get(1)?;
+
+                Self::Pop(*destination)
+            }
+
+            EQ => {
+                let destination = input.get(1)?;
+                let lhs = input.get(2)?;
+                let rhs = input.get(3)?;
+
+                Self::Eq(*destination, *lhs, *rhs)
+            }
+
+            GT => {
+                let destination = input.get(1)?;
+                let lhs = input.get(2)?;
+                let rhs = input.get(3)?;
+
+                Self::Gt(*destination, *lhs, *rhs)
+            }
+
+            JMP => {
+                let destination = input.get(1)?;
+
+                Self::Jmp(*destination)
+            }
+
+            JT => {
+                let test_val = input.get(1)?;
+
+                let destination = input.get(2)?;
+
+                Self::Jt(*test_val, *destination)
+            }
+
+            JF => {
+                let test_val = input.get(1)?;
+                let destination = input.get(2)?;
+
+                Self::Jf(*test_val, *destination)
+            }
+
+            ADD => {
+                let destination = input.get(1)?;
+                let lhs = input.get(2)?;
+                let rhs = input.get(3)?;
+
+                Self::Add(*destination, *lhs, *rhs)
+            }
+
+            MULT => {
+                let destination = input.get(1)?;
+                let lhs = input.get(2)?;
+                let rhs = input.get(3)?;
+
+                Self::Mult(*destination, *lhs, *rhs)
+            }
+
+            MOD => {
+                let destination = input.get(1)?;
+                let lhs = input.get(2)?;
+                let rhs = input.get(3)?;
+
+                Self::Mod(*destination, *lhs, *rhs)
+            }
+
+            AND => {
+                let destination = input.get(1)?;
+                let lhs = input.get(2)?;
+                let rhs = input.get(3)?;
+
+                Self::And(*destination, *lhs, *rhs)
+            }
+
+            OR => {
+                let destination = input.get(1)?;
+                let lhs = input.get(2)?;
+                let rhs = input.get(3)?;
+
+                Self::Or(*destination, *lhs, *rhs)
+            }
+
+            NOT => {
+                let destination = input.get(1)?;
+                let value = input.get(2)?;
+
+                Self::Not(*destination, *value)
+            }
+
+            RMEM => {
+                let destination = input.get(1)?;
+                let source = input.get(2)?;
+
+                Self::Rmem(*destination, *source)
+            }
+
+            WMEM => {
+                let destination = input.get(1)?;
+                let value = input.get(2)?;
+
+                Self::Wmem(*destination, *value)
+            }
+
+            CALL => {
+                let destination = input.get(1)?;
+
+                Self::Call(*destination)
+            }
+
+            RET => Self::Ret(),
+
+            OUT => {
+                let value = input.get(1)?;
+
+                Self::Out(*value)
+            }
+
+            IN => {
+                let destination = input.get(1)?;
+
+                Self::In(*destination)
+            }
+
+            NOOP => Self::Noop,
+
+            _ => Self::Unknown(*val),
+        })
     }
 
     /// Number to increment the program counter by to move past this instruction.
@@ -301,6 +292,13 @@ impl Token {
             Self::Unknown(_) => 1,
         }
     }
+}
+
+pub fn parse_16_bit_little_endian(input: &[u8]) -> Vec<u16> {
+    input
+        .chunks(2)
+        .map(|chunk| (chunk[1] as u16) << 8 | chunk[0] as u16)
+        .collect::<Vec<u16>>()
 }
 
 pub fn decompile(program: &[u16]) -> String {

@@ -1,43 +1,16 @@
-use std::fs;
+use std::{
+    fs,
+    io::{self, BufRead},
+};
 
 use clap::Parser;
 
-use machine::{Machine, OutputBuffer};
+use log::{debug, error};
+use machine::{Machine, RunState};
+use parse::parse_16_bit_little_endian;
 
 mod machine;
 mod parse;
-
-struct StandardOutputBuffer {
-    buff: Vec<char>,
-}
-
-impl StandardOutputBuffer {
-    fn new() -> Self {
-        Self {
-            buff: Vec::with_capacity(1024),
-        }
-    }
-}
-
-impl OutputBuffer for StandardOutputBuffer {
-    fn push(&mut self, val: char) {
-        self.buff.push(val);
-    }
-
-    fn flush(&mut self) {
-        if self.buff.len() > 0 {
-            print!("{}", self.buff.drain(0..).collect::<String>());
-        }
-    }
-
-    fn len(&self) -> usize {
-        self.buff.len()
-    }
-
-    fn contents(&self) -> &[char] {
-        &self.buff[0..]
-    }
-}
 
 /// Simple program to greet a person
 #[derive(Parser, Debug)]
@@ -60,19 +33,47 @@ fn main() {
 
     let file_path = args.program;
 
-    let file_contents = fs::read(&file_path)
-        .expect(&format!("Could not read file {file_path}"))
-        .chunks(2)
-        .map(|chunk| (chunk[1] as u16) << 8 | chunk[0] as u16)
-        .collect::<Vec<u16>>();
+    let file_contents = fs::read(&file_path).expect(&format!("Could not read file {file_path}"));
+
+    let program = parse_16_bit_little_endian(&file_contents);
 
     // dbg!(&file_contents);
-    //
+
     if args.decompile {
-        println!("{}", parse::decompile(&file_contents));
+        println!("{}", parse::decompile(&program));
     } else {
-        let mut machine = Machine::new(file_contents, Box::new(StandardOutputBuffer::new()));
-        machine.run();
-        machine.flush_output_buffer();
+        let mut machine = Machine::new(program);
+
+        debug!("Running program");
+
+        loop {
+            match machine.run() {
+                RunState::Continue => {
+                    continue;
+                }
+
+                RunState::BufferedOutput(s) => {
+                    print!("{s}");
+                }
+
+                RunState::InuptNeeded => {
+                    let mut line = String::new();
+                    let stdin = io::stdin();
+                    stdin.lock().read_line(&mut line).unwrap();
+
+                    machine.push_input(line);
+                }
+
+                RunState::Halt => {
+                    debug!("program execution complete");
+                    break;
+                }
+
+                RunState::Error(e) => {
+                    error!("{e}");
+                    break;
+                }
+            }
+        }
     }
 }

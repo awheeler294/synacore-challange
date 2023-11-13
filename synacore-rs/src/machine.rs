@@ -1,81 +1,114 @@
 use anyhow::{anyhow, Context};
-use log::{debug, error, info, trace};
-use std::ops::{Add, Mul};
+use log::{debug, info, trace};
+use std::{
+    collections::VecDeque,
+    ops::{Add, Mul},
+};
 
 use crate::parse::Token;
-
-pub trait OutputBuffer {
-    fn push(&mut self, val: char);
-    fn flush(&mut self);
-    fn len(&self) -> usize;
-    fn contents(&self) -> &[char];
-}
 
 const U15_MAX: u16 = 32768;
 const REGISTER_OFFSET: u16 = U15_MAX;
 const NUM_REGISTERS: u16 = 8;
 
+#[derive(Debug, PartialEq)]
+pub enum RunState {
+    Continue,
+    BufferedOutput(String),
+    InuptNeeded,
+    Error(String),
+    Halt,
+}
+
 pub struct Machine {
-    run: bool,
+    run_state: RunState,
     pc: usize,
     stack: Vec<u16>,
     memory: Vec<u16>,
-    output_buffer: Box<dyn OutputBuffer>,
+    input_buffer: VecDeque<char>,
+    output_buffer: Vec<char>,
 }
 
 impl Machine {
-    pub fn new(program: Vec<u16>, output_buffer: Box<dyn OutputBuffer>) -> Self {
+    pub fn new(program: Vec<u16>) -> Self {
         let mut memory = program.clone();
         memory.extend(vec![0; (U15_MAX + NUM_REGISTERS) as usize - memory.len()].iter());
 
         Self {
-            run: false,
+            run_state: RunState::Continue,
             pc: 0,
             stack: vec![],
             memory,
-            output_buffer,
+            input_buffer: VecDeque::with_capacity(256),
+            output_buffer: Vec::with_capacity(512),
         }
     }
 
-    pub fn run(&mut self) {
-        self.run = true;
-        // let mut flush = false;
-        info!("Running program");
+    pub fn run(&mut self) -> &RunState {
+        while *self.run_once() == RunState::Continue {}
 
-        while self.run {
-            trace!("pc: {}", self.pc);
-            trace!("instruction: {:?}", self.memory.get(self.pc));
+        &self.run_state
+    }
 
-            if let Some(token) = Token::parse(&self.memory[self.pc..]) {
-                match token {
-                    Token::Out(_) => {}
-                    _ => {
-                        if self.output_buffer.len() > 0 {
-                            self.output_buffer.flush();
-                        }
-                    }
+    pub fn run_once(&mut self) -> &RunState {
+        match self.run_state {
+            RunState::Halt | RunState::Error(_) => {
+                return &self.run_state;
+            }
+
+            RunState::InuptNeeded => {
+                if self.input_buffer.len() == 0 {
+                    return &self.run_state;
                 }
 
-                // dbg!(&token);
-
-                if let Err(e) = self.process_token(token) {
-                    error!("Error processing token: {e}, pc: {}", self.pc);
-                    return;
-                };
-            } else {
-                error!(
-                    "could not process instruction at {}: {}",
-                    self.pc, self.memory[self.pc]
-                );
-                self.pc += 1;
+                self.run_state = RunState::Continue;
             }
+
+            RunState::BufferedOutput(_) => {
+                self.run_state = RunState::Continue;
+            }
+
+            RunState::Continue => {}
+        };
+
+        debug!("pc: {}", self.pc);
+        debug!("instruction: {:?}", self.memory.get(self.pc));
+
+        if let Some(token) = Token::parse(&self.memory[self.pc..]) {
+            match token {
+                Token::Out(_) => {}
+                _ => {
+                    if self.output_buffer.len() > 0 {
+                        self.run_state = RunState::BufferedOutput(self.flush_output_buffer());
+                        return &self.run_state;
+                    }
+                }
+            }
+
+            // dbg!(&token);
+
+            if let Err(e) = self.process_token(token) {
+                self.run_state =
+                    RunState::Error(format!("Error processing token: {e}, pc: {}", self.pc));
+            };
+        } else {
+            self.run_state = RunState::Error(format!(
+                "could not parse instruction at {}: {}",
+                self.pc, self.memory[self.pc]
+            ));
         }
+
+        return &self.run_state;
+    }
+
+    pub fn push_input(&mut self, input: String) {
+        self.input_buffer.extend(input.chars());
     }
 
     fn process_token(&mut self, token: Token) -> anyhow::Result<()> {
         match token {
             Token::Halt => {
-                self.run = false;
+                self.run_state = RunState::Halt;
             }
 
             Token::Set(register, value) => {
@@ -85,7 +118,6 @@ impl Machine {
 
                     self.pc += token.pc_delta();
                 } else {
-                    self.run = false;
                     return Err(anyhow!(
                         "Set: register argument out of bounds: {register}, token: {token:?}"
                     ));
@@ -107,21 +139,17 @@ impl Machine {
 
                     self.pc += token.pc_delta();
                 } else {
-                    self.run = false;
                     return Err(anyhow!("Attempted to pop empty stack"));
                 }
             }
 
             Token::Eq(destination, lhs, rhs) => {
+                // dbg!(&token);
                 debug!("Eq: {destination}, {lhs}, {rhs}");
                 debug!("    pc: {}", self.pc);
                 debug!("    lhs is {}", self.fetch_val(lhs));
                 debug!("    rhs is {}", self.fetch_val(rhs));
-                // dbg!(&token);
-                // dbg!(&self.pc);
-                // dbg!(&self.fetch_val(destination));
-                // dbg!(&self.fetch_val(lhs));
-                // dbg!(&self.fetch_val(rhs));
+
                 if self.fetch_val(lhs) == self.fetch_val(rhs) {
                     debug!("    lhs == rhs, set {destination} to 1");
 
@@ -141,7 +169,6 @@ impl Machine {
                 } else {
                     self.memory[destination as usize] = 0
                 }
-
                 self.pc += token.pc_delta();
             }
 
@@ -151,12 +178,10 @@ impl Machine {
             }
 
             Token::Jt(test_val, destination) => {
+                // dbg!(&token);
                 debug!("Jt: {test_val}, {destination}");
                 debug!("    pc: {}", self.pc);
                 debug!("    test value is {}", self.fetch_val(test_val));
-                // dbg!(&token);
-                // dbg!(&self.pc);
-                // dbg!(self.fetch_val(test_val));
 
                 if self.fetch_val(test_val) != 0 {
                     debug!("    test value is non-zero, set pc to {destination}");
@@ -170,10 +195,10 @@ impl Machine {
             }
 
             Token::Jf(test_val, destination) => {
+                // dbg!(&token);
                 debug!("Jf: {test_val}, {destination}");
                 debug!("    pc: {}", self.pc);
                 debug!("    test value is {}", self.fetch_val(test_val));
-                // dbg!(&token);
 
                 if self.fetch_val(test_val) == 0 {
                     debug!("    test value is zero, set pc to {destination}");
@@ -229,10 +254,10 @@ impl Machine {
             }
 
             Token::Not(destination, value) => {
+                // dbg!(&token);
                 debug!("Not: {destination}, {value}");
                 debug!("    pc: {}", self.pc);
                 debug!("    value is {}", self.fetch_val(value));
-                // dbg!(&token);
 
                 let result = (!self.fetch_val(value)) % U15_MAX;
                 debug!("    result is {result}");
@@ -244,9 +269,9 @@ impl Machine {
             }
 
             Token::Rmem(destination, source) => {
+                // dbg!(&token);
                 debug!("Rmem: {destination}, {source}");
                 debug!("    pc: {}", self.pc);
-                // dbg!(&token);
 
                 let source = self.fetch_val(source);
 
@@ -260,9 +285,9 @@ impl Machine {
             }
 
             Token::Wmem(destination, value) => {
+                // dbg!(&token);
                 debug!("Wmem: {destination}, {value}");
                 debug!("    pc: {}", self.pc);
-                // dbg!(&token);
 
                 let destination = self.fetch_val(destination);
                 debug!("    writing {value} to memory address {destination}");
@@ -272,13 +297,11 @@ impl Machine {
             }
 
             Token::Call(destination) => {
+                // dbg!(&token);
                 debug!("Call: {destination}");
                 debug!("    pc: {}", self.pc);
                 debug!("    push {} on to the stack", self.pc + token.pc_delta());
                 debug!("    set pc to {destination}");
-                // dbg!(&token);
-                // dbg!(self.pc + 2);
-                // dbg!(self.fetch_val(destination));
 
                 self.stack.push(self.pc as u16 + token.pc_delta() as u16);
 
@@ -291,7 +314,7 @@ impl Machine {
                     self.pc = destination as usize;
                 } else {
                     trace!("ret with empty stack = halt");
-                    self.run = false;
+                    self.run_state = RunState::Halt;
                 }
             }
 
@@ -304,10 +327,14 @@ impl Machine {
                 self.pc += token.pc_delta();
             }
 
-            Token::In(_destination) => {
+            Token::In(destination) => {
                 // dbg!(&token);
-
-                self.pc += token.pc_delta();
+                if let Some(ch) = self.input_buffer.pop_front() {
+                    self.memory[destination as usize] = ch as u16;
+                    self.pc += token.pc_delta();
+                } else {
+                    self.run_state = RunState::InuptNeeded;
+                }
             }
 
             Token::Noop => {
@@ -319,8 +346,6 @@ impl Machine {
             Token::Unknown(_val) => {
                 // dbg!(&token);
 
-                self.run = false;
-
                 return Err(anyhow!(
                     "process_token: Unknown token encountered at {}: {token:?}",
                     self.pc
@@ -331,8 +356,8 @@ impl Machine {
         Ok(())
     }
 
-    pub fn flush_output_buffer(&mut self) {
-        self.output_buffer.flush();
+    pub fn flush_output_buffer(&mut self) -> String {
+        self.output_buffer.drain(0..).collect::<String>()
     }
 
     #[allow(dead_code)]
@@ -364,34 +389,6 @@ mod tests {
 
     use super::*;
 
-    struct TestOutputBuffer {
-        buff: Vec<char>,
-    }
-
-    impl TestOutputBuffer {
-        fn new() -> Self {
-            Self {
-                buff: Vec::with_capacity(1024),
-            }
-        }
-    }
-
-    impl OutputBuffer for TestOutputBuffer {
-        fn push(&mut self, val: char) {
-            self.buff.push(val);
-        }
-
-        fn flush(&mut self) {}
-
-        fn len(&self) -> usize {
-            self.buff.len()
-        }
-
-        fn contents(&self) -> &[char] {
-            &self.buff[0..]
-        }
-    }
-
     #[test]
     fn test_simple_program() {
         #[rustfmt::skip]
@@ -402,15 +399,14 @@ mod tests {
             OUT, REGISTER_OFFSET,
         ];
 
-        let mut machine = Machine::new(program, Box::new(TestOutputBuffer::new()));
+        let mut machine = Machine::new(program);
 
-        machine.run();
+        let run_state = machine.run();
+
+        let expected = RunState::BufferedOutput(format!("{}", char::from_u32(4).unwrap()));
+        assert_eq!(*run_state, expected);
 
         assert_eq!(machine.memory[32768], 4);
-        assert_eq!(
-            machine.output_buffer.contents(),
-            [char::from_u32(4).unwrap()]
-        );
     }
 
     #[test]
@@ -425,12 +421,69 @@ mod tests {
             OUT, REGISTER_OFFSET,
         ];
 
-        let mut machine = Machine::new(program, Box::new(TestOutputBuffer::new()));
+        let mut machine = Machine::new(program);
 
-        machine.run();
+        let run_state = machine.run();
+
+        let expected = RunState::BufferedOutput(String::from("A"));
+        assert_eq!(*run_state, expected);
 
         assert_eq!(machine.memory[32768], 65);
-        assert_eq!(machine.output_buffer.contents(), ['A']);
+    }
+
+    #[test]
+    fn test_print_hello_world() {
+        #[rustfmt::skip]
+        let program = vec![
+            OUT, 'H' as u16,
+            OUT, 'e' as u16,
+            OUT, 'l' as u16,
+            OUT, 'l' as u16,
+            OUT, 'o' as u16,
+            OUT, ' ' as u16,
+            OUT, 'W' as u16,
+            OUT, 'o' as u16,
+            OUT, 'r' as u16,
+            OUT, 'l' as u16,
+            OUT, 'd' as u16,
+        ];
+
+        let mut machine = Machine::new(program);
+
+        let run_state = machine.run();
+
+        let expected = RunState::BufferedOutput(String::from("Hello World"));
+        assert_eq!(*run_state, expected);
+    }
+
+    #[test]
+    fn test_print_multiple() {
+        #[rustfmt::skip]
+        let program = vec![
+            OUT, 'H' as u16,
+            OUT, 'e' as u16,
+            OUT, 'l' as u16,
+            OUT, 'l' as u16,
+            OUT, 'o' as u16,
+            NOOP,
+            OUT, 'W' as u16,
+            OUT, 'o' as u16,
+            OUT, 'r' as u16,
+            OUT, 'l' as u16,
+            OUT, 'd' as u16,
+        ];
+
+        let mut machine = Machine::new(program);
+
+        let run_state = machine.run();
+
+        let expected = RunState::BufferedOutput(String::from("Hello"));
+        assert_eq!(*run_state, expected);
+
+        let run_state = machine.run();
+
+        let expected = RunState::BufferedOutput(String::from("World"));
+        assert_eq!(*run_state, expected);
     }
 
     #[test]
@@ -449,13 +502,14 @@ mod tests {
             OUT, REGISTER_OFFSET,
         ];
 
-        let mut machine = Machine::new(program, Box::new(TestOutputBuffer::new()));
+        let mut machine = Machine::new(program);
 
-        machine.run();
+        let run_state = machine.run();
+
+        let expected = RunState::BufferedOutput(String::from("A"));
+        assert_eq!(*run_state, expected);
 
         assert_eq!(machine.memory[32768], 65);
-        assert_ne!(machine.output_buffer.contents(), ['A', 'B']);
-        assert_eq!(machine.output_buffer.contents(), ['A']);
     }
 
     #[test]
@@ -467,7 +521,7 @@ mod tests {
             SET, REGISTER_OFFSET, 61,
         ];
 
-        let mut machine = Machine::new(program, Box::new(TestOutputBuffer::new()));
+        let mut machine = Machine::new(program);
 
         machine.run();
 
@@ -481,7 +535,7 @@ mod tests {
             SET, REGISTER_OFFSET + 1, 61,
         ];
 
-        let mut machine = Machine::new(program, Box::new(TestOutputBuffer::new()));
+        let mut machine = Machine::new(program);
 
         machine.run();
 
@@ -495,7 +549,7 @@ mod tests {
             SET, REGISTER_OFFSET + 2, 61,
         ];
 
-        let mut machine = Machine::new(program, Box::new(TestOutputBuffer::new()));
+        let mut machine = Machine::new(program);
 
         machine.run();
 
@@ -509,7 +563,7 @@ mod tests {
             SET, REGISTER_OFFSET + 3, 61,
         ];
 
-        let mut machine = Machine::new(program, Box::new(TestOutputBuffer::new()));
+        let mut machine = Machine::new(program);
 
         machine.run();
 
@@ -523,7 +577,7 @@ mod tests {
             SET, REGISTER_OFFSET + 4, 61,
         ];
 
-        let mut machine = Machine::new(program, Box::new(TestOutputBuffer::new()));
+        let mut machine = Machine::new(program);
 
         machine.run();
 
@@ -537,7 +591,7 @@ mod tests {
             SET, REGISTER_OFFSET + 5, 61,
         ];
 
-        let mut machine = Machine::new(program, Box::new(TestOutputBuffer::new()));
+        let mut machine = Machine::new(program);
 
         machine.run();
 
@@ -551,7 +605,7 @@ mod tests {
             SET, REGISTER_OFFSET + 6, 61,
         ];
 
-        let mut machine = Machine::new(program, Box::new(TestOutputBuffer::new()));
+        let mut machine = Machine::new(program);
 
         machine.run();
 
@@ -565,7 +619,7 @@ mod tests {
             SET, REGISTER_OFFSET + 7, 61,
         ];
 
-        let mut machine = Machine::new(program, Box::new(TestOutputBuffer::new()));
+        let mut machine = Machine::new(program);
 
         machine.run();
 
@@ -579,7 +633,7 @@ mod tests {
             SET, REGISTER_OFFSET + 8, 61,
         ];
 
-        let mut machine = Machine::new(program, Box::new(TestOutputBuffer::new()));
+        let mut machine = Machine::new(program);
 
         machine.run();
 
@@ -593,7 +647,7 @@ mod tests {
             SET, REGISTER_OFFSET - 1, 61,
         ];
 
-        let mut machine = Machine::new(program, Box::new(TestOutputBuffer::new()));
+        let mut machine = Machine::new(program);
 
         machine.run();
 
