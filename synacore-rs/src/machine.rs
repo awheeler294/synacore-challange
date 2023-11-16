@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Context};
-use log::{debug, info, trace};
+use log::{debug, trace};
 use std::{
     collections::VecDeque,
     ops::{Add, Mul},
@@ -101,7 +101,7 @@ impl Machine {
         return &self.run_state;
     }
 
-    pub fn push_input(&mut self, input: String) {
+    pub fn push_input(&mut self, input: &str) {
         self.input_buffer.extend(input.chars());
     }
 
